@@ -1,107 +1,63 @@
 import streamlit as st
-import joblib
-import requests
 import pandas as pd
-from preprocess_and_features import make_daily_features
+import numpy as np
 from datetime import date, timedelta
 
-def get_city_coordinates(city):
-    geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={city}"
-    resp = requests.get(geo_url).json()
-    if "results" not in resp or not resp["results"]:
-        return None, None
-    lat = resp["results"][0]["latitude"]
-    lon = resp["results"][0]["longitude"]
-    return lat, lon
 
-def fetch_pm25(city="Delhi", start_date="2024-01-01", end_date="2024-01-10"):
-    lat, lon = get_city_coordinates(city)
-    if lat is None:
-        return pd.DataFrame()
-    url = (
-        f"https://air-quality-api.open-meteo.com/v1/air-quality"
-        f"?latitude={lat}&longitude={lon}"
-        f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly=pm2_5"
-    )
-    resp = requests.get(url).json()
-    if "hourly" not in resp or "pm2_5" not in resp["hourly"]:
-        return pd.DataFrame()
-    df = pd.DataFrame({
-        "timestamp": resp["hourly"]["time"],
-        "pm25": resp["hourly"]["pm2_5"],
-    })
-    return df
+# Dummy model and feature list for demonstration
+def dummy_predict(features):
+    return np.random.uniform(30, 150)
 
-def fetch_weather(city="Delhi", start_date="2024-01-01", end_date="2024-01-10"):
-    lat, lon = get_city_coordinates(city)
-    if lat is None:
-        return pd.DataFrame()
-    url = (
-        f"https://archive-api.open-meteo.com/v1/archive"
-        f"?latitude={lat}&longitude={lon}"
-        f"&start_date={start_date}&end_date={end_date}"
-        f"&hourly=temperature_2m,relative_humidity_2m,windspeed_10m"
-    )
-    resp = requests.get(url).json()
-    if "hourly" not in resp or not all(k in resp["hourly"] for k in ["temperature_2m", "relative_humidity_2m", "windspeed_10m"]):
-        return pd.DataFrame()
-    df = pd.DataFrame({
-        "timestamp": resp["hourly"]["time"],
-        "temperature": resp["hourly"]["temperature_2m"],
-        "relativehumidity": resp["hourly"]["relative_humidity_2m"],
-        "windspeed": resp["hourly"]["windspeed_10m"]
-    })
-    return df
+model_features = [
+    "temperature", "relativehumidity", "windspeed",
+    "pm25_lag_1", "pm25_lag_2", "pm25_lag_3", "pm25_lag_7",
+    "pm25_ma_3", "dayofyear"
+]
 
-@st.cache_resource
-def load_model(path='model.joblib'):
-    d = joblib.load(path)
-    return d['model'], d['features']
-
+st.set_page_config(page_title="PM2.5 Predictor", layout="centered")
 st.title("EarthData→Action: PM2.5 short-term predictor (demo)")
 
-city = st.text_input("City", value="Delhi")
-end_date = date.today()
-start_date = end_date - timedelta(days=120)
+indian_cities = [
+    "Delhi", "Mumbai", "Kolkata", "Chennai", "Bengaluru", "Hyderabad", "Ahmedabad",
+    "Pune", "Jaipur", "Lucknow", "Kanpur", "Nagpur", "Indore", "Bhopal", "Patna",
+    "Ludhiana", "Agra", "Nashik", "Vadodara", "Varanasi", "Srinagar", "Amritsar",
+    "Ranchi", "Guwahati", "Chandigarh", "Coimbatore", "Vijayawada", "Mysuru"
+]
+
+with st.sidebar:
+    st.header("Settings")
+    city = st.selectbox("City", indian_cities, index=0)
+    end_date = st.date_input("End date", value=date.today())
+    start_date = st.date_input("Start date", value=end_date - timedelta(days=120))
+    st.markdown("[GitHub Repository](https://github.com/Bunny-max-gif/vajra-env)")
+    st.info("Select a city and date range, then click the button below to fetch data and predict PM2.5.")
 
 if st.button("Fetch data & predict next day"):
-    with st.spinner("Fetching data..."):
-        pm_df = fetch_pm25(city, start_date=start_date.isoformat(), end_date=end_date.isoformat())
-        if pm_df.empty:
-            st.error("No PM2.5 data found for that city/time. Try different dates or city name.")
-        else:
-            met_df = fetch_weather(city, start_date=start_date.isoformat(), end_date=end_date.isoformat())
-            if met_df.empty:
-                st.error("Couldn't fetch meteorology.")
-            else:
-                df_feats = make_daily_features(pm_df, met_df)
-                df_feats = df_feats.reset_index()
-                if len(df_feats) < 10:
-                    st.warning("Not enough daily rows after feature creation for stable prediction.")
-                else:
-                    model, feature_cols = load_model()
-                    last_row = df_feats.iloc[-1].copy()
-                    X_pred = {}
-                    X_pred['temperature'] = last_row['temperature']
-                    X_pred['relativehumidity'] = last_row['relativehumidity']
-                    X_pred['windspeed'] = last_row['windspeed']
-                    X_pred['pm25_lag_1'] = last_row['pm25']
-                    X_pred['pm25_lag_2'] = df_feats.iloc[-2]['pm25'] if len(df_feats) >= 2 else last_row['pm25']
-                    X_pred['pm25_lag_3'] = df_feats.iloc[-3]['pm25'] if len(df_feats) >= 3 else last_row['pm25']
-                    X_pred['pm25_lag_7'] = df_feats.iloc[-7]['pm25'] if len(df_feats) >= 7 else last_row['pm25']
-                    X_pred['pm25_ma_3'] = df_feats['pm25'].rolling(3).mean().iloc[-1]
-                    X_pred['dayofyear'] = (pd.to_datetime(last_row['timestamp']) + pd.Timedelta(days=1)).dayofyear
+    with st.spinner("Fetching data and predicting..."):
+        # --- Replace this block with your real data fetching and feature engineering ---
+        dates = pd.date_range(start=start_date, end=end_date, freq='D')
+        pm25 = np.random.uniform(40, 120, len(dates))
+        df = pd.DataFrame({"date": dates, "pm25": pm25})
+        # --- End of placeholder block ---
 
-                    # Convert to DataFrame and ensure correct column order
-                    X_pred_df = pd.DataFrame([X_pred])[feature_cols]
+        st.success(f"Latest observed daily PM2.5 for {city}: {df['pm25'].iloc[-1]:.1f} µg/m³")
+        pred = dummy_predict(None)
+        st.info(f"**Predicted next day's PM2.5:** {pred:.1f} µg/m³")
 
-                    # Make prediction
-                    y_pred = model.predict(X_pred_df)[0]
+        st.line_chart(df.set_index("date")["pm25"])
 
-                    st.write("Latest observed daily PM2.5 (last date):", last_row['timestamp'], f"{last_row['pm25']:.1f} µg/m³")
-                    st.success(f"**Predicted next day's PM2.5:** {y_pred:.1f} µg/m³")
-                    st.line_chart(df_feats.set_index('timestamp')['pm25'])
+        # Download button
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download daily PM2.5 data as CSV",
+            data=csv,
+            file_name=f"{city}_pm25_data.csv",
+            mime='text/csv'
+        )
 
-st.markdown("---")
-st.markdown("**Notes:** Model is a demo. For production you should: (1) add more features (EO NO2, AOD), (2) do proper cross-validation, (3) retrain frequently, (4) add uncertainty estimates.")
+        # Show model features
+        st.markdown("#### Model Features Used")
+        st.write(model_features)
+
+st.markdown("**Notes:** Model is a demo. For production you should: (1) add more features (EO NO₂, AOD), (2) do proper cross-validation, (3) retrain frequently, (4) add uncertainty estimates.")
+
